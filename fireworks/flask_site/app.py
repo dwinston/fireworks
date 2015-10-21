@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request
+from flask import redirect, url_for, abort
 from fireworks import Firework
 from fireworks.utilities.fw_serializers import DATETIME_HANDLER
 from pymongo import DESCENDING
@@ -78,6 +79,14 @@ def show_workflow(wf_id):
     wf = json.loads(json.dumps(wf, default=DATETIME_HANDLER))  # formats ObjectIds
     return render_template('wf_details.html', **locals())
 
+@app.route('/sub/<int:sub_id>')
+def show_submission_workflow(sub_id):
+    doc = lp.workflows.find_one({'metadata.submission_id': sub_id},
+                                {'nodes': 1, '_id': 0})
+    if doc is None:
+        abort(404)
+    fw_id = doc['nodes'][0] # possible IndexError?
+    return redirect(url_for('show_workflow', wf_id=fw_id))
 
 @app.route('/fw/', defaults={"state": "total"})
 @app.route("/fw/<state>/")
@@ -114,6 +123,9 @@ def wf_states(state):
     all_states = STATES
     return render_template('wf_state.html', **locals())
 
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template('404.html'), 404
 
 if __name__ == "__main__":
     app.run(debug=True, port=8080)
