@@ -136,7 +136,7 @@ def show_submission_workflow(sub_id):
     if doc is None:
         abort(404)
     fw_id = doc['nodes'][0] # possible IndexError?
-    return redirect(url_for('show_workflow', wf_id=fw_id))
+    return redirect(url_for('wf_details', wf_id=fw_id))
 
 @app.route('/fw/', defaults={"state": "total"})
 @app.route("/fw/<state>/")
