@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 from flask import redirect, url_for, abort
 from fireworks import Firework
+from fireworks.features.fw_report import FWReport
 from fireworks.utilities.fw_serializers import DATETIME_HANDLER
 from pymongo import DESCENDING
 import os, json
@@ -149,10 +150,9 @@ def fw_state(state):
     except ValueError:
         page = 1
 
-    rows = list(db.find(q, projection=["fw_id", "name", "created_on"]).sort([('_id', DESCENDING)]).skip(page - 1).limit(
-        PER_PAGE))
+    rows = list(db.find(q, projection=["fw_id", "name", "created_on"]).sort([('_id', DESCENDING)]).skip(
+        (page - 1)*PER_PAGE).limit(PER_PAGE))
     pagination = Pagination(page=page, total=fw_count, record_name='fireworks', per_page=PER_PAGE)
-    all_states = STATES
     return render_template('fw_state.html', **locals())
 
 
@@ -166,12 +166,12 @@ def wf_state(state):
         page = int(request.args.get('page', 1))
     except ValueError:
         page = 1
-    rows = list(db.find(q).sort([('_id', DESCENDING)]).skip(page - 1).limit(PER_PAGE))
+    rows = list(db.find(q).sort([('_id', DESCENDING)]).skip((page - 1)*PER_PAGE).limit(PER_PAGE))
     for r in rows:
         r["fw_id"] = r["nodes"][0]
     pagination = Pagination(page=page, total=wf_count, record_name='workflows', per_page=PER_PAGE)
-    all_states = STATES
     return render_template('wf_state.html', **locals())
+
 
 @app.route("/wf/metadata/<key>/<value>/", defaults={"state": "total"})
 @app.route("/wf/metadata/<key>/<value>/<state>/")
@@ -204,6 +204,23 @@ def wf_metadata_find(key, value, state):
                                 record_name='workflows', per_page=PER_PAGE)
         all_states = STATES
         return render_template('wf_metadata.html', **locals())
+
+
+@app.route('/report/', defaults={"interval": "months", "num_intervals": 6})
+@app.route('/report/<interval>/', defaults={"num_intervals": 6})
+@app.route("/report/<interval>/<num_intervals>/")
+def report(interval, num_intervals):
+    num_intervals = int(num_intervals)
+    fwr = FWReport(lp)
+
+    fw_report_data = fwr.get_stats(coll="fireworks", interval=interval, num_intervals=num_intervals)
+    fw_report_text = fwr.get_stats_str(fw_report_data)
+
+    wf_report_data = fwr.get_stats(coll="workflows", interval=interval, num_intervals=num_intervals)
+    wf_report_text = fwr.get_stats_str(wf_report_data)
+
+    return render_template('report.html', **locals())
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=8080)
