@@ -324,12 +324,6 @@ class Firework(FWSerializable):
     def __str__(self):
         return 'Firework object: (id: %i , name: %s)' % (self.fw_id, self.fw_name)
 
-# TODO: remove this (stop supporting) sometime around FW v1.0
-@deprecated(replacement=Firework)
-class FireWork(Firework):
-    pass
-
-
 class Tracker(FWSerializable, object):
     """
     A Tracker monitors a file and returns the last N lines for updating the Launch object
@@ -1050,10 +1044,10 @@ class Workflow(FWSerializable):
                             Workflow.Links.from_dict(m_dict['links']), m_dict.get('name'),
                             m_dict['metadata'], created_on, updated_on)
         else:
-            return Workflow.from_FireWork(Firework.from_dict(m_dict))
+            return Workflow.from_Firework(Firework.from_dict(m_dict))
 
     @classmethod
-    def from_FireWork(cls, fw, name=None, metadata=None):
+    def from_Firework(cls, fw, name=None, metadata=None):
         name = name if name else fw.name
         return Workflow([fw], None, name=name, metadata=metadata, created_on=fw.created_on,
                         updated_on=fw.updated_on)
