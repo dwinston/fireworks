@@ -1,8 +1,6 @@
 # coding: utf-8
 
 from __future__ import unicode_literals
-from datetime import datetime
-from fireworks import Firework, Launch
 
 """
 The LaunchPad manages the FireWorks database.
@@ -93,7 +91,7 @@ class LaunchPad(FWSerializable):
 
     def __init__(self, host='localhost', port=27017, name='fireworks',
                  username=None, password=None, logdir=None, strm_lvl=None,
-                 user_indices=None, wf_user_indices=None):
+                 user_indices=None, wf_user_indices=None, ssl_ca_file=None):
         """
 
         :param host:
@@ -105,12 +103,14 @@ class LaunchPad(FWSerializable):
         :param strm_lvl:
         :param user_indices:
         :param wf_user_indices:
+        :param ssl_ca_file:
         """
         self.host = host
         self.port = port
         self.name = name
         self.username = username
         self.password = password
+        self.ssl_ca_file = ssl_ca_file
 
         # set up logger
         self.logdir = logdir
@@ -122,7 +122,8 @@ class LaunchPad(FWSerializable):
         self.wf_user_indices = wf_user_indices if wf_user_indices else []
 
         # get connection
-        self.connection = MongoClient(host, port, j=True, socketTimeoutMS=MONGO_SOCKET_TIMEOUT_MS)
+        self.connection = MongoClient(host, port, j=True, ssl_ca_certs=self.ssl_ca_file,
+                                        socketTimeoutMS=MONGO_SOCKET_TIMEOUT_MS)
         self.db = self.connection[name]
         if username:
             self.db.authenticate(username, password)
@@ -145,7 +146,8 @@ class LaunchPad(FWSerializable):
             'username': self.username, 'password': self.password,
             'logdir': self.logdir, 'strm_lvl': self.strm_lvl,
             'user_indices': self.user_indices,
-            'wf_user_indices': self.wf_user_indices}
+            'wf_user_indices': self.wf_user_indices,
+            'ssl_ca_file': self.ssl_ca_file}
 
     def update_spec(self, fw_ids, spec_document):
         """
@@ -174,9 +176,10 @@ class LaunchPad(FWSerializable):
         strm_lvl = d.get('strm_lvl', None)
         user_indices = d.get('user_indices', [])
         wf_user_indices = d.get('wf_user_indices', [])
+        ssl_ca_file = d.get('ssl_ca_file', None)
         return LaunchPad(d['host'], d['port'], d['name'], d['username'],
                          d['password'], logdir, strm_lvl, user_indices,
-                         wf_user_indices)
+                         wf_user_indices, ssl_ca_file)
 
     @classmethod
     def auto_load(cls):
@@ -263,6 +266,14 @@ class LaunchPad(FWSerializable):
         return old_new
 
     def append_wf(self, new_wf, fw_ids, detour=False, pull_spec_mods=True):
+        """
+        Append a new workflow on top of an existing workflow
+
+        :param new_wf: (Workflow) The new workflow to append
+        :param fw_ids: ([int]) The parent fw_ids at which to append the workflow
+        :param detour: (bool) Whether to connect the new Workflow in a "detour" style, i.e., move original children of the parent fw_ids to the new_wf
+        :param pull_spec_mods: (bool) Whether the new Workflow should pull the FWActions of the parent fw_ids
+        """
         wf = self.get_wf_by_fw_id(fw_ids[0])
         updated_ids = wf.append_wf(new_wf, fw_ids, detour=detour, pull_spec_mods=pull_spec_mods)
 
@@ -1091,7 +1102,7 @@ class LaunchPad(FWSerializable):
         d['completed'] = False
         self.offline_runs.insert(d)
 
-    def recover_offline(self, launch_id, ignore_errors=False):
+    def recover_offline(self, launch_id, ignore_errors=False, print_errors=False):
         # get the launch directory
         m_launch = self.get_launch_by_id(launch_id)
         try:
@@ -1112,7 +1123,12 @@ class LaunchPad(FWSerializable):
                     for s in m_launch.state_history:
                         if s['state'] == 'RUNNING':
                             s['created_on'] = reconstitute_dates(offline_data['started_on'])
-                    self.launches.find_and_modify({'launch_id': m_launch.launch_id}, m_launch.to_db_dict(), upsert=True)
+                    l = self.launches.find_and_modify({'launch_id': m_launch.launch_id}, m_launch.to_db_dict(), upsert=True)
+                    fw_id = l['fw_id']
+                    f = self.fireworks.find_and_modify({'fw_id': fw_id},
+                                                       {'$set': {'state': 'RUNNING', 'updated_on': datetime.datetime.utcnow()}})
+                    if f:
+                        self._refresh_wf(fw_id)
 
                 if 'fwaction' in offline_data:
                     fwaction = FWAction.from_dict(offline_data['fwaction'])
@@ -1129,6 +1145,8 @@ class LaunchPad(FWSerializable):
             self.offline_runs.update({"launch_id": launch_id}, {"$set": {"updated_on": datetime.datetime.utcnow().isoformat()}})
             return None
         except:
+            if print_errors:
+                self.m_logger.error("failed recovering launch_id {}.\n{}".format(launch_id, traceback.format_exc()))
             if not ignore_errors:
                 traceback.print_exc()
                 m_action = FWAction(stored_data={'_message': 'runtime error during task', '_task': None,
