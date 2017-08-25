@@ -11,12 +11,11 @@ import glob
 import unittest
 import time
 from fireworks import explicit_serialize, FWAction
-from fireworks.core.firework import Firework, Workflow, FireTaskBase
+from fireworks.core.firework import Firework, Workflow, FiretaskBase
 from fireworks.core.fworker import FWorker
 from fireworks.core.launchpad import LaunchPad, WFLock
 from fireworks.core.rocket_launcher import launch_rocket, rapidfire
 from fireworks.features.background_task import BackgroundTask
-from fireworks.fw_config import WFLOCK_EXPIRATION_KILL
 from fireworks.queue.queue_launcher import setup_offline_job
 from fireworks.user_objects.dupefinders.dupefinder_exact import DupeFinderExact
 from fireworks.user_objects.firetasks.fileio_tasks import FileTransferTask, FileWriteTask
@@ -26,7 +25,6 @@ from fw_tutorials.dynamic_wf.fibadd_task import FibonacciAdderTask
 from fw_tutorials.firetask.addition_task import AdditionTask
 from fireworks.tests.tasks import DummyFWEnvTask, DummyJobPassTask, DummyLPTask
 from fireworks.features.stats import FWStats
-import six
 
 __author__ = 'Anubhav Jain'
 __copyright__ = 'Copyright 2013, The Materials Project'
@@ -49,7 +47,7 @@ def throw_error(msg):
     raise ValueError(msg)
 
 @explicit_serialize
-class MultipleDetourTask(FireTaskBase):
+class MultipleDetourTask(FiretaskBase):
 
     def run_task(self, fw_spec):
         print('Running the Multiple Detour Task')
@@ -59,14 +57,14 @@ class MultipleDetourTask(FireTaskBase):
         return FWAction(detours=[dt1, dt2, dt3])
 
 @explicit_serialize
-class UpdateSpecTask(FireTaskBase):
+class UpdateSpecTask(FiretaskBase):
     def run_task(self, fw_spec):
         print('Running the Update Spec Task')
         dt1 = Firework(ScriptTask.from_str('echo "this is dummy job 1"'))
         return FWAction(update_spec={"dummy1": 1}, additions=[dt1])
 
 @explicit_serialize
-class ModSpecTask(FireTaskBase):
+class ModSpecTask(FiretaskBase):
     def run_task(self, fw_spec):
         print('Running the Mod Spec Task')
         return FWAction(mod_spec=[{"_push": {"dummy2": True}}])
@@ -417,10 +415,14 @@ class MongoTests(unittest.TestCase):
         self.lp.add_wf(fw)
         self.lp.add_wf(fw)
         launch_rocket(self.lp, self.fworker)
+        # TODO: if test keeps failing on Travis, add an explicit check of nlaunches>0 in the database here
+        # this will ensure the first Rocket is actually in the DB
         launch_rocket(self.lp, self.fworker)
 
-        self.lp.delete_wf(2)
-        self.assertRaises(ValueError, self.lp.get_fw_by_id, 2)
+        run_id = self.lp.get_launch_by_id(1).fw_id
+        del_id = 1 if run_id == 2 else 2
+        self.lp.delete_wf(del_id)
+        self.assertRaises(ValueError, self.lp.get_fw_by_id, del_id)
         self.assertEqual(self.lp.get_launch_by_id(1).action.stored_data[
             'stdout'], 'test1\n')
 
@@ -430,8 +432,16 @@ class MongoTests(unittest.TestCase):
         self.lp.add_wf(fw)
         self.lp.add_wf(fw)
         launch_rocket(self.lp, self.fworker)
+        # TODO: if test keeps failing on Travis, add an explicit check of nlaunches>0 in the database here
+        # this will ensure the first Rocket is actually in the DB
         launch_rocket(self.lp, self.fworker)
 
+        if self.lp.launches.count() > 1:
+            print("TOO MANY LAUNCHES FOUND!")
+            print("--------")
+            for d in self.lp.launches.find():
+                print(d)
+            print("--------")
         self.assertEqual(self.lp.launches.count(), 1)
 
     def test_append_wf(self):

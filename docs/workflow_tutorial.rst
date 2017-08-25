@@ -23,7 +23,7 @@ For example, we might want print the first two lines of Hamlet's soliloquy to th
 
 Basically, we just want to ensure that *"To be, or not to be,"* is printed out before *"that is the question:"*. Let's define and execute this workflow.
 
-1. Move to the ``workflow`` tutorial directory on your FireServer::
+1. Move to the ``workflow`` tutorial directory in your fireworks repository::
 
     cd <INSTALL_DIR>/fw_tutorials/workflow
 
@@ -70,7 +70,7 @@ Basically, we just want to ensure that *"To be, or not to be,"* is printed out b
 #. This should print the second step of the workflow (*"That is the question"*). You can verify that both steps are completed::
 
     lpad get_fws -i 1 -d less
-    lpad get_fws -i 1 -d less
+    lpad get_fws -i 2 -d less
 
 .. note:: Shakespeare purists will undoubtedly notice that I have mangled the first line of this soliloquy by splitting it into two lines. But at least we printed them in the correct order!
 
@@ -86,7 +86,7 @@ Let's continue with a very similar example, but make the workflow a little more 
 
 Let's quickly define and execute this workflow.
 
-1. Stay in the same ``workflow`` tutorial directory on your FireServer and clean it up::
+1. Stay in the same ``workflow`` tutorial directory in your fireworks repository and clean it up::
 
     cd <INSTALL_DIR>/fw_tutorials/workflow
     rm FW.json
@@ -141,6 +141,6 @@ Here is a complete Python example that runs a Workflow::
 Next steps
 ==========
 
-Neither our *Hamlet* workflow nor our diamond workflow were particularly interesting; you could have achieved the same result by :doc:`running multiple FireTasks within a single Firework <firetask_tutorial>`. Indeed, the single-Firework solution with multiple FireTasks is conceptually much simpler than defining workflows. The design choice of using FireTasks versus a Workflow in such scenarios is discussed another tutorial. For example, you might want to use a Workflow if each step requires a different type of computing resource.
+Neither our *Hamlet* workflow nor our diamond workflow were particularly interesting; you could have achieved the same result by :doc:`running multiple Firetasks within a single Firework <firetask_tutorial>`. Indeed, the single-Firework solution with multiple Firetasks is conceptually much simpler than defining workflows. The design choice of using Firetasks versus a Workflow in such scenarios is discussed another tutorial. For example, you might want to use a Workflow if each step requires a different type of computing resource.
 
 Meanwhile, you can continue on to the last step of this tutorial series, which better illustrates the power of workflows: :doc:`Dynamic workflows <dynamic_wf_tutorial>`.

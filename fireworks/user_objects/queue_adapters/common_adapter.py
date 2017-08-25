@@ -3,6 +3,8 @@
 from __future__ import unicode_literals
 import copy
 
+import sys
+
 """
 This module implements a CommonAdaptor that supports standard PBS and SGE
 queues.
@@ -68,6 +70,8 @@ class CommonAdapter(QueueAdapterBase):
 
     def _parse_jobid(self, output_str):
         if self.q_type == "SLURM":
+            if isinstance(output_str, bytes):  # Py3 compatibility
+                output_str = output_str.decode('utf-8')
             for l in output_str.split("\n"):
                 if l.startswith("Submitted batch job"):
                     return int(l.split()[-1])
@@ -108,6 +112,8 @@ class CommonAdapter(QueueAdapterBase):
         elif self.q_type == "Cobalt":
             header="JobId:User:Queue:Jobname:Nodes:Procs:Mode:WallTime:State:RunTime:Project:Location"
             status_cmd.extend(['--header', header, '-u', username])
+        elif self.q_type == 'SGE':
+            status_cmd.extend(['-q', self['queue'], '-u', username])
         else:
             status_cmd.extend(['-u', username])
 
@@ -131,8 +137,12 @@ class CommonAdapter(QueueAdapterBase):
                 # last line is: "1 job step(s) in query, 0 waiting, ..."
                 return int(output_str.split('\n')[-2].split()[0])
         if self.q_type == "LoadSharingFacility":
-                #Just count the number of lines
-                return len(output_str.split('\n'))
+            #Just count the number of lines
+            return len(output_str.split('\n'))
+        if self.q_type == "SGE":
+            # want only lines that include username;
+            # this will exclude e.g. header lines
+            return len([l for l in output_str.split('\n') if username in l])
 
         count = 0
         for l in output_str.split('\n'):
@@ -191,7 +201,7 @@ class CommonAdapter(QueueAdapterBase):
             # grab the returncode. PBS returns 0 if the job was successful
             if p.returncode == 0:
                 try:
-                    job_id = self._parse_jobid(p.stdout.read())
+                    job_id = self._parse_jobid(p.stdout.read().decode())
                     queue_logger.info(
                         'Job submission was successful and job_id is {}'.format(
                             job_id))

@@ -3,7 +3,7 @@
 from __future__ import unicode_literals
 
 """
-A set of global constants for FireWorks (Python code as a config file)
+A set of global constants for FireWorks (Python code as a config file).
 """
 
 import os
@@ -25,16 +25,14 @@ __date__ = 'Dec 12, 2012'
 NEGATIVE_FWID_CTR = 0
 
 # this is where load_object() looks for serialized objects
-
 USER_PACKAGES = ['fireworks.user_objects', 'fireworks.utilities.tests',
                  'fw_tutorials', 'fireworks.features']
 
+# if you update a _fw_name, you can use this to record the change and maintain deserialization
 FW_NAME_UPDATES = {'Transfer Task': 'FileTransferTask',
                    'Script Task': 'ScriptTask',
                    'Template Writer Task': 'TemplateWriterTask',
                    'Dupe Finder Exact': 'DupeFinderExact'}
-# if you update a _fw_name, you can use this to record the change and
-# maintain deserialization
 
 YAML_STYLE = False  # controls whether YAML documents will be nested as braces or blocks (False = blocks)
 
@@ -66,7 +64,7 @@ RAPIDFIRE_SLEEP_SECS = 60  # seconds to sleep between rapidfire loops
 
 LAUNCHPAD_LOC = None  # where to find the my_launchpad.yaml file
 FWORKER_LOC = None  # where to find the my_fworker.yaml file
-QUEUEADAPTER_LOC = None  # where to find the my_queueadapter.yaml file
+QUEUEADAPTER_LOC = None  # where to find the my_qadapter.yaml file
 
 CONFIG_FILE_DIR = '.'  # directory containing config files (if not individually set)
 
@@ -98,8 +96,11 @@ WEBSERVER_HOST = "127.0.0.1"  # default host on which the Flask web server runs
 
 WEBSERVER_PORT = 5000  # default port on which the Flask web server runs
 
-MONGO_SOCKET_TIMEOUT_MS = 5 * 60 * 1000  # value of socketTimeoutMS when connection to mongoDB.  See pymongo official
-                                         # documentation http://api.mongodb.org/python/current/api/pymongo/mongo_client.html
+WEBSERVER_PERFWARNINGS = False # enable performance-related warnings
+
+# value of socketTimeoutMS when connection to mongoDB.  See pymongo official
+# documentation http://api.mongodb.org/python/current/api/pymongo/mongo_client.html
+MONGO_SOCKET_TIMEOUT_MS = 5 * 60 * 1000
 
 
 def override_user_settings():
@@ -134,15 +135,14 @@ def override_user_settings():
             elif key == 'ECHO_TEST':
                 print(v)
             elif key not in globals():
-                raise ValueError(
-                    'Invalid FW_config file has unknown parameter: {}'.format(
-                        key))
+                raise ValueError('Invalid FW_config file has unknown parameter: {}'.format(key))
             else:
                 globals()[key] = v
 
     for k in ["LAUNCHPAD_LOC", "FWORKER_LOC", "QUEUEADAPTER_LOC"]:
         if globals().get(k, None) is None:
-            fname = "my_{}.yaml".format(k.split("_")[0].lower())
+            fname = "my_qadapter.yaml" if k == "QUEUEADAPTER_LOC" else \
+                "my_{}.yaml".format(k.split("_")[0].lower())
             m_paths = []
             if os.path.realpath(CONFIG_FILE_DIR) not in test_paths:
                 test_paths.insert(0, CONFIG_FILE_DIR)
@@ -171,15 +171,14 @@ def config_to_dict():
 
 
 def write_config(path=None):
-    path = os.path.join(os.path.expanduser('~'), ".fireworks",
-                        'FW_config.yaml') if path is None else path
+    path = os.path.join(os.path.expanduser('~'), ".fireworks", 'FW_config.yaml') if path is None else path
     dumpfn(config_to_dict(), path, Dumper=Dumper)
 
 
 @singleton
 class FWData(object):
     """
-    This class stores data that a FireTask might want to access, e.g. to see the runtime params
+    This class stores data that a Firetask might want to access, e.g. to see the runtime params
     """
 
     def __init__(self):
@@ -187,3 +186,4 @@ class FWData(object):
         self.NODE_LIST = None  # the node list for sub jobs
         self.SUB_NPROCS = None  # the number of process of the sub job
         self.DATASERVER = None  # the shared object manager
+        self.Running_IDs = None

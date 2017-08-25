@@ -2,6 +2,111 @@
 FireWorks Changelog
 ===================
 
+**v1.4.1**
+
+* optional support for argcomplete (requires installing argcomplete)
+* more powerful update_spec command (S. Dwaraknath)
+* Py3 fix for multi_launch (X. Qu)
+* numpy serializes to lists (thanks to J. Kuck)
+* fix for qlaunch rapidfire that caused unintended stopping (thanks to J. Kuck)
+* multiple doc updates (A. Jain / K. Bhatt)
+
+**v1.4.0**
+
+* mlaunch is now "rlaunch multi". See docs (S. Dwaraknath)
+* For FireTask, we now suggest you use Firetask (more consistent naming) - (A. Jain)
+* Adds the FilePad, a way to store files in GridFS. See docs for more details (K. Mathew, A. Jain)
+* Add query ability to frontend (M. Aykol, D. Winston)
+* Add ability to "pause/resume" fireworks in addition to existing "defuse/reignite". See docs (S. Dwaraknath)
+* Add sort ability in frontend (D. Waroquiers)
+* Misc frontend improvements (D. Winston, M. Aykol, A. Jain)
+* Add ability to move run dirs, i.e. update the database with location of runs after they are moved (A. Faghaninia, A. Jain)
+* Add ability to qlaunch a particular fw_id (J. Montoya)
+* Py3 compatibility (X. Qu, A. Faghaninia)
+* Fix lpad admin maintain (shenjh)
+* Fix to _pass_job_info (D. Waroquiers)
+* improved docs (J. Montoya, M. Aykol, A. Jain)
+
+**v1.3.9**
+
+* import Tracker object more easily (J. Montoya)
+
+**v1.3.8**
+
+* don't enforce j=True for Mongo connections (S.P. Ong)
+* improve testing framework (S.P. Ong)
+* remove problems & inefficiencies in workflow refresh (thanks to G. Petretto)
+* properly update fw_states when you defuse a workflow
+* only enter _fizzled_parents into the database once - for efficiency, and to better track the provenance of what actually occurred during the run
+* minor bugfixes / comments
+
+**v1.3.7**
+
+* minor doc updates
+* add ability to clear the task-level recovery, which gets stuck (J. Montoya)
+* py3k fixes (K. Matthew)
+* minor bugfixes
+
+**v1.3.6**
+
+* greatly improved docstring formatting and accuracy (K. Mathew)
+* Py3K fixes (K. Mathew)
+* code cleanups (K. Mathew)
+* better PEP conformance (K. Mathew)
+* representative launch returns most recent launch (K. Mathew)
+
+
+**v1.3.5**
+
+* forget about offline runs if a queue submission unsuccessful (thanks to D. Stansberry for pointing out the problem)
+* cleanups to project setup (S.P. Ong)
+
+**v1.3.4**
+
+* add launches mode query (query launches collection when performing lpad tasks)
+* Add auth option to web app (S.P. Ong)
+* enhance webapp server w/gunicorn (D. Winston)
+* threshold parameter in introspect commmand
+* add license option to SLURM adapter
+* add fill mode to qlaunch for keeping jobs in the queue even when nothing in DB to run
+* fix njobs_queue bug
+* open compressed files in textmode to ensure py3k compatibility (K. Mathew)
+
+**v1.3.3**
+
+* Load default FWorker location when running launch commands from Python
+* qlaunch: default maxjobs_queue is zero, meaning don't automatically restrict to 10 jobs in queue
+* Add --wfquery and --fwquery options to ``lpad_webgui`` for advanced users (alpha version)
+
+**v1.3.2**
+
+* update pymongo commands (X. Qu & A. Jain)
+* minor qadapter updates (D. Dotson & X. Qu)
+* very minor doc updates (S. Bajaj & A. Faghaninia)
+
+**v1.3.1**
+
+* FileTransferTask has max_retry parameter (D. Dotson)
+* Allow copying workflows but w/reset ids (D. Dotson)
+* add ``max_loops`` option to rlaunch; this allows you to limit infinite mode to a few cycles
+
+**v1.3.0**
+
+* fix datetime import (fixes broken queue_launcher) - (D. Winston)
+* fix datetime handler in __repr__
+* always unreserve if queue submission goes wrong (G. Petretto)
+
+**v1.2.9**
+
+* add ``lpad admin unlock`` command to force unlock of workflows
+* add ``--timeout`` option for rapidfire launches
+* add ``user`` parameter for FileTransferTask (D. Dotson)
+* fix bug in FileTransferTask (D. Dotson)
+
+**v1.2.8**
+
+* fix spelling of ``my_qadapter.yaml`` (thanks to specter119)
+
 **v1.2.7**
 
 * fix errant print statement
