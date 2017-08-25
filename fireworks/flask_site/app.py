@@ -2,10 +2,10 @@ import json
 import os
 from functools import wraps
 
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify, Response, make_response
 from flask import redirect, url_for, abort, flash, session
 from flask_paginate import Pagination
-from pymongo import DESCENDING, ASCENDING
+from pymongo import DESCENDING
 
 from fireworks import Firework
 from fireworks.features.fw_report import FWReport
@@ -70,14 +70,16 @@ def _addq_FW(q):
     if session.get('wf_filt'):
         filt_from_wf = fwapp_util.fw_filt_given_wf_filt(
             session.get('wf_filt'), lp)
-    return {"$and": [q, app.BASE_Q, session['fw_filt'], filt_from_wf]}
+    return {
+        "$and": [q, app.BASE_Q, session.get('fw_filt', {}), filt_from_wf]}
 
 def _addq_WF(q):
     filt_from_fw = {}
     if session.get('fw_filt'):
         filt_from_fw = fwapp_util.wf_filt_given_fw_filt(
             session.get('fw_filt'), lp)
-    return {"$and": [q, app.BASE_Q_WF, session['wf_filt'], filt_from_fw]}
+    return {
+        "$and": [q, app.BASE_Q_WF, session.get('wf_filt', {}), filt_from_fw]}
 
 @app.template_filter('datetime')
 def datetime(value):
@@ -376,6 +378,22 @@ def parse_querystr(querystr, coll):
               "to the database collection "
               "to make it run faster.".format(querystr))
     return d
+
+@app.route("/reports/<coll>/<interval>/<num_intervals>/fig.png")
+def simple(coll, interval, num_intervals):
+    import StringIO
+
+    from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+
+    fwr = FWReport(lp)
+    fig = fwr.plot_stats(coll=coll, interval=interval, num_intervals=int(num_intervals))
+
+    canvas = FigureCanvas(fig)
+    png_output = StringIO.StringIO()
+    canvas.print_png(png_output)
+    response=make_response(png_output.getvalue())
+    response.headers['Content-Type'] = 'image/png'
+    return response
 
 
 if __name__ == "__main__":
