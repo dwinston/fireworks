@@ -2,11 +2,13 @@
 
 from __future__ import unicode_literals
 
+import six
+
 """
 A runnable script for managing a FireWorks database (a command-line interface to launchpad.py)
 """
 
-from argparse import ArgumentParser
+from argparse import ArgumentParser, ArgumentTypeError
 import os
 import time
 import ast
@@ -16,7 +18,7 @@ import traceback
 from six.moves import input, zip
 
 from pymongo import DESCENDING, ASCENDING
-import yaml
+import ruamel.yaml as yaml
 
 from fireworks.fw_config import RESERVATION_EXPIRATION_SECS, \
     RUN_EXPIRATION_SECS, PW_CHECK_NUM, MAINTAIN_INTERVAL, CONFIG_FILE_DIR, \
@@ -76,7 +78,7 @@ def parse_helper(lp, args, wf_mode=False, skip_pw=False):
         return pw_check(args.fw_id, args, skip_pw)
     if args.query:
         query = ast.literal_eval(args.query)
-    if args.name and not args.launches_mode:
+    if args.name and 'launches_mode' in args and not args.launches_mode:
         query['name'] = args.name
     if args.state:
         query['state'] = args.state
@@ -133,12 +135,9 @@ def init_yaml(args):
         val = input("Enter {} (default: {}) : ".format(k, v))
         doc[k] = val if val else v
     doc["port"] = int(doc["port"])  # enforce the port as an int
-    with open(args.config_file, "w") as f:
-        import yaml
-        doc = LaunchPad.from_dict(doc).to_dict()
-        doc = recursive_dict(doc, preserve_unicode=False)  # drop unicode
-        yaml.dump(doc, f)
-        print("\nConfiguration written to {}!".format(args.config_file))
+    lp = LaunchPad.from_dict(doc)
+    lp.to_file(args.config_file)
+    print("\nConfiguration written to {}!".format(args.config_file))
 
 
 def reset(args):
@@ -324,7 +323,7 @@ def delete_wfs(args):
     lp = get_lp(args)
     fw_ids = parse_helper(lp, args, wf_mode=True)
     for f in fw_ids:
-        lp.delete_wf(f)
+        lp.delete_wf(f, delete_launch_dirs=args.delete_launch_dirs)
         lp.m_logger.debug('Processed fw_id: {}'.format(f))
     lp.m_logger.info('Finished deleting {} WFs'.format(len(fw_ids)))
 
@@ -342,9 +341,10 @@ def get_children(links, start, max_depth):
 
 def detect_lostruns(args):
     lp = get_lp(args)
+    query = ast.literal_eval(args.query) if args.query else None
     fl, ff, fi = lp.detect_lostruns(expiration_secs=args.time, fizzle=args.fizzle, rerun=args.rerun,
                                     max_runtime=args.max_runtime, min_runtime=args.min_runtime,
-                                    refresh=args.refresh)
+                                    refresh=args.refresh, query=query)
     lp.m_logger.debug('Detected {} lost launches: {}'.format(len(fl), fl))
     lp.m_logger.info('Detected {} lost FWs: {}'.format(len(ff), ff))
     lp.m_logger.info('Detected {} inconsistent FWs: {}'.format(len(fi), fi))
@@ -526,9 +526,10 @@ def webgui(args):
             import sys
             sys.exit("Gunicorn is required for server mode. "
                      "Install using `pip install gunicorn`.")
+        nworkers = args.nworkers if args.nworkers else number_of_workers()
         options = {
             'bind': '%s:%s' % (args.host, args.port),
-            'workers': number_of_workers(),
+            'workers': nworkers,
         }
         StandaloneApplication(bootstrap_app, options).run()
 
@@ -605,6 +606,12 @@ def introspect(args):
         print('')
 
 
+def get_launchdir(args):
+    lp = get_lp(args)
+    ld = lp.get_launchdir(args.fw_id, args.launch_idx)
+    print(ld)
+
+
 def track_fws(args):
     lp = get_lp(args)
     fw_ids = parse_helper(lp, args, skip_pw=True)
@@ -643,8 +650,18 @@ def get_output_func(format):
     if format == "json":
         return lambda x: json.dumps(x, default=DATETIME_HANDLER, indent=4)
     else:
-        return lambda x: yaml.dump(recursive_dict(x, preserve_unicode=False),
+        return lambda x: yaml.safe_dump(recursive_dict(x, preserve_unicode=False),
                                    default_flow_style=False)
+
+
+def arg_positive_int(value):
+    try:
+        ivalue = int(value)
+        if ivalue < 1:
+            raise ValueError()
+    except ValueError:
+        raise ArgumentTypeError("{} is not a positive integer".format(value))
+    return ivalue
 
 
 def lpad():
@@ -663,7 +680,7 @@ def lpad():
     # This makes common argument options easier to maintain. E.g., what if
     # there is a new state or disp option?
     fw_id_args = ["-i", "--fw_id"]
-    fw_id_kwargs = {"type": str, "nargs": "+", "help": "fw_id"}
+    fw_id_kwargs = {"type": str, "help": "fw_id"}
 
     state_args = ['-s', '--state']
     state_kwargs = {"type": lambda s: s.upper(), "help": "Select by state.",
@@ -720,8 +737,13 @@ def lpad():
     check_wf_parser.add_argument('-f', '--dot_file', help='path to store the workflow graph, default: workflow.dot', default='workflow.dot')
     check_wf_parser.set_defaults(func=check_wf, control_flow=False, data_flow=False)
 
+    get_launchdir_parser = subparsers.add_parser('get_launchdir', help='get the directory of the most recent launch of the given fw_id. A common usage is "cd `get_launchdir <FW_ID>`" to change the working directory that of the FW launch')
+    get_launchdir_parser.add_argument('fw_id', type=int, help='fw_id to chdir to')
+    get_launchdir_parser.add_argument('--launch_idx', type=int, help='the index of the launch to get (default of -1 is most recent launch)', default=-1)
+    get_launchdir_parser.set_defaults(func=get_launchdir)
+
     append_wf_parser = subparsers.add_parser('append_wflow', help='append a workflow from file to a workflow on launchpad')
-    append_wf_parser.add_argument(*fw_id_args, type=fw_id_kwargs["type"], nargs=fw_id_kwargs["nargs"], help='parent firework ids')
+    append_wf_parser.add_argument(*fw_id_args, type=fw_id_kwargs["type"], help='parent firework ids')
     append_wf_parser.add_argument('-f', '--wf_file', help='path to a firework or workflow file')
     append_wf_parser.add_argument('-d', '--detour', help='append workflow as a detour', dest='detour', action='store_true')
     append_wf_parser.add_argument('--no_pull_spec_mods', help='do not to pull spec mods from parent', dest='pull_spec_mods', action='store_false')
@@ -836,7 +858,7 @@ def lpad():
                                                        "prompt required when modifying more than {} "
                                                        "entries.".format(PW_CHECK_NUM))
     resume_fw_parser.set_defaults(func=resume_fws)
-    
+
     update_fws_parser = subparsers.add_parser(
         'update_fws', help='Update a Firework spec.')
     update_fws_parser.add_argument(*fw_id_args, **fw_id_kwargs)
@@ -934,7 +956,10 @@ def lpad():
                                                       "Password or positive response to input prompt "
                                                       "required when modifying more than {} "
                                                       "entries.".format(PW_CHECK_NUM))
-    delete_wfs_parser.set_defaults(func=delete_wfs)
+    delete_wfs_parser.add_argument('--ldirs', help="the launch directories associated with the WF will "
+                                                   "be deleted as well, if possible", dest="delete_launch_dirs",
+                                   action='store_true')
+    delete_wfs_parser.set_defaults(func=delete_wfs, delete_launch_dirs=False)
 
     get_qid_parser = subparsers.add_parser('get_qids', help='get the queue id of a Firework')
     get_qid_parser.add_argument(*fw_id_args, **fw_id_kwargs)
@@ -963,6 +988,8 @@ def lpad():
                                                       'than this (seconds)', type=int)
     fizzled_parser.add_argument('--min_runtime', help='min runtime, matching failures must have run '
                                                       'at least this long (seconds)', type=int)
+    fizzled_parser.add_argument('-q', '--query',
+                                help='restrict search to only FWs matching this query')
     fizzled_parser.set_defaults(func=detect_lostruns)
 
     priority_parser = subparsers.add_parser('set_priority', help='modify the priority of one or more FireWorks')
@@ -996,6 +1023,7 @@ def lpad():
     webgui_parser.add_argument('--debug', help='print debug messages', action='store_true')
     webgui_parser.add_argument('-s', '--server_mode', help='run in server mode (skip opening the browser)',
                                action='store_true')
+    webgui_parser.add_argument('--nworkers', type=arg_positive_int, help='Number of worker processes for server mode')
     webgui_parser.add_argument('--fwquery', help='additional query filter for FireWorks as JSON string')
     webgui_parser.add_argument('--wflowquery', help='additional query filter for Workflows as JSON string')
     webgui_parser.set_defaults(func=webgui)
@@ -1096,11 +1124,13 @@ def lpad():
         # if no command supplied, print help
         parser.print_help()
     else:
-        if hasattr(args, "fw_id") and args.fw_id is not None:
-            if type(args.fw_id) is list:
-                if "," in args.fw_id[0]:
-                    args.fw_id = args.fw_id[0].split(",")
-                args.fw_id = [int(_fw_id) for _fw_id in args.fw_id]
+        if hasattr(args, "fw_id") and args.fw_id is not None and \
+                isinstance(args.fw_id, six.string_types):
+                if "," in args.fw_id:
+                    args.fw_id = [int(x) for x in args.fw_id.split(",")]
+                else:
+                    args.fw_id = [int(args.fw_id)]
+
         args.func(args)
 
 if __name__ == '__main__':

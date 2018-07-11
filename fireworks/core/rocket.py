@@ -2,6 +2,8 @@
 
 from __future__ import unicode_literals
 
+from monty.os.path import zpath
+
 """
 A Rocket fetches a Firework from the database, runs the sequence of Firetasks inside, and then
 completes the Launch
@@ -23,8 +25,9 @@ from monty.io import zopen
 from monty.serialization import loadfn, dumpfn
 
 from fireworks.core.firework import FWAction, Firework
-from fireworks.fw_config import FWData, PING_TIME_SECS, REMOVE_USELESS_DIRS, PRINT_FW_JSON, \
-    PRINT_FW_YAML, STORE_PACKING_INFO
+from fireworks.fw_config import FWData, PING_TIME_SECS, REMOVE_USELESS_DIRS, \
+    PRINT_FW_JSON, \
+    PRINT_FW_YAML, STORE_PACKING_INFO, ROCKET_STREAM_LOGLEVEL
 from fireworks.utilities.dict_mods import apply_mod
 from fireworks.core.launchpad import LockedWorkflowError, LaunchPad
 from fireworks.utilities.fw_utilities import get_fw_logger
@@ -129,7 +132,8 @@ class Rocket:
         lp = self.launchpad
         launch_dir = os.path.abspath(os.getcwd())
         logdir = lp.get_logdir() if lp else None
-        l_logger = get_fw_logger('rocket.launcher', l_dir=logdir,stream_level='INFO')
+        l_logger = get_fw_logger('rocket.launcher', l_dir=logdir,
+                                 stream_level=ROCKET_STREAM_LOGLEVEL)
 
         # check a FW job out of the launchpad
         if lp:
@@ -138,12 +142,12 @@ class Rocket:
             m_fw = Firework.from_file(os.path.join(os.getcwd(), "FW.json"))
 
             # set the run start time
-            with open('FW_offline.json', 'r+') as f:
-                d = json.loads(f.read())
+            fpath = zpath("FW_offline.json")
+            with zopen(fpath) as f_in:
+                d = json.loads(f_in.read())
                 d['started_on'] = datetime.utcnow().isoformat()
-                f.seek(0)
-                f.write(json.dumps(d))
-                f.truncate()
+                with zopen(fpath, "wt") as f_out:
+                    f_out.write(json.dumps(d, ensure_ascii=False))
 
             launch_id = None  # we don't need this in offline mode...
 
@@ -238,7 +242,7 @@ class Rocket:
                               '_all_stored_data': all_stored_data,
                               '_all_update_spec': all_update_spec,
                               '_all_mod_spec': all_mod_spec}
-                Rocket.update_checkpoint(lp, launch_id, checkpoint)
+                Rocket.update_checkpoint(lp, launch_dir, launch_id, checkpoint)
  
                 if lp:
                    l_logger.log(logging.INFO, "Task started: %s." % t.fw_name)
@@ -290,14 +294,14 @@ class Rocket:
                         final_state = 'FIZZLED'
                         lp.complete_launch(launch_id, m_action, final_state)
                     else:
-                        with open('FW_offline.json', 'r+') as f:
-                            d = json.loads(f.read())
+                        fpath = zpath("FW_offline.json")
+                        with zopen(fpath) as f_in:
+                            d = json.loads(f_in.read())
                             d['fwaction'] = m_action.to_dict()
                             d['state'] = 'FIZZLED'
                             d['completed_on'] = datetime.utcnow().isoformat()
-                            f.seek(0)
-                            f.write(json.dumps(d))
-                            f.truncate()
+                            with zopen(fpath, "wt") as f_out:
+                                f_out.write(json.dumps(d, ensure_ascii=False))
 
                     return True
 
@@ -352,14 +356,15 @@ class Rocket:
                 final_state = 'COMPLETED'
                 lp.complete_launch(launch_id, m_action, final_state)
             else:
-                with open('FW_offline.json', 'r+') as f:
-                    d = json.loads(f.read())
+
+                fpath = zpath("FW_offline.json")
+                with zopen(fpath) as f_in:
+                    d = json.loads(f_in.read())
                     d['fwaction'] = m_action.to_dict()
                     d['state'] = 'COMPLETED'
                     d['completed_on'] = datetime.utcnow().isoformat()
-                    f.seek(0)
-                    f.write(json.dumps(d))
-                    f.truncate()
+                    with zopen(fpath, "wt") as f_out:
+                        f_out.write(json.dumps(d, ensure_ascii=False))
 
             return True
 
@@ -404,33 +409,37 @@ class Rocket:
                                        self.fw_id, final_state, e, self.fw_id))
                     return True
             else:
-                with open('FW_offline.json', 'r+') as f:
-                    d = json.loads(f.read())
+                fpath = zpath("FW_offline.json")
+                with zopen(fpath) as f_in:
+                    d = json.loads(f_in.read())
                     d['fwaction'] = m_action.to_dict()
                     d['state'] = 'FIZZLED'
                     d['completed_on'] = datetime.utcnow().isoformat()
-                    f.seek(0)
-                    f.write(json.dumps(d))
-                    f.truncate()
+                    with zopen(fpath, "wt") as f_out:
+                        f_out.write(json.dumps(d, ensure_ascii=False))
 
             return True
 
     @staticmethod
-    def update_checkpoint(launchpad, launch_id, checkpoint):
+    def update_checkpoint(launchpad, launch_dir, launch_id, checkpoint):
         """
         Helper function to update checkpoint
 
         Args:
             launchpad (LaunchPad): LaunchPad to ping with checkpoint data
+            launch_dir (str): directory in which FW_offline.json was created
             launch_id (int): launch id to update
             checkpoint (dict): checkpoint data
         """
         if launchpad:
             launchpad.ping_launch(launch_id, checkpoint=checkpoint)
         else:
-            offline_info = loadfn("FW_offline.json")
-            offline_info.update({"checkpoint": checkpoint})
-            dumpfn(offline_info, "FW_offline.json")
+            fpath = zpath("FW_offline.json")
+            with zopen(fpath) as f_in:
+                d = json.loads(f_in.read())
+                d['checkpoint'] = checkpoint
+                with zopen(fpath, "wt") as f_out:
+                    f_out.write(json.dumps(d, ensure_ascii=False))
 
     def decorate_fwaction(self, fwaction, my_spec, m_fw, launch_dir):
 

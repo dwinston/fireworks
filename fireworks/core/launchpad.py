@@ -2,6 +2,9 @@
 
 from __future__ import unicode_literals
 
+from monty.io import zopen
+from monty.os.path import zpath
+
 """
 The LaunchPad manages the FireWorks database.
 """
@@ -12,7 +15,10 @@ import os
 import random
 import time
 import traceback
+import shutil
 from collections import OrderedDict, defaultdict
+from itertools import chain
+from tqdm import tqdm
 
 from pymongo import MongoClient
 from pymongo import DESCENDING, ASCENDING
@@ -313,6 +319,49 @@ class LaunchPad(FWSerializable):
         self.m_logger.info('Added a workflow. id_map: {}'.format(old_new))
         return old_new
 
+    def bulk_add_wfs(self, wfs):
+        """
+        Adds a list of workflows to the fireworks database
+        using insert_many for both the fws and wfs, is
+        more efficient than adding them one at a time.
+
+        Args:
+            wfs ([Workflow]): list of workflows or fireworks
+
+        Returns:
+            None
+
+        """
+        # Make all fireworks workflows
+        wfs = [Workflow.from_firework(wf) if isinstance(wf, Firework)
+               else wf for wf in wfs]
+
+        # Initialize new firework counter, starting from the next fw id
+        total_num_fws = sum([len(wf.fws) for wf in wfs])
+        new_fw_counter = self.fw_id_assigner.find_one_and_update(
+            {}, {'$inc': {'next_fw_id': total_num_fws}})['next_fw_id']
+        for wf in tqdm(wfs):
+            # Reassign fw_ids and increment the counter
+            old_new = dict(zip(
+                wf.id_fw.keys(),
+                range(new_fw_counter, new_fw_counter + len(wf.fws))))
+            for fw in wf.fws:
+                fw.fw_id = old_new[fw.fw_id]
+            wf._reassign_ids(old_new)
+            new_fw_counter += len(wf.fws)
+
+            # Set root fws to READY
+            for fw_id in wf.root_fw_ids:
+                wf.id_fw[fw_id].state = 'READY'
+                wf.fw_states[fw_id] = 'READY'
+
+        # Insert all fws and wfs, do workflows first so fws don't
+        # get checked out prematurely
+        self.workflows.insert_many(wf.to_db_dict() for wf in wfs)
+        all_fws = chain.from_iterable(wf.fws for wf in wfs)
+        self.fireworks.insert_many(fw.to_db_dict() for fw in all_fws)
+        return None
+
     def append_wf(self, new_wf, fw_ids, detour=False, pull_spec_mods=True):
         """
         Append a new workflow on top of an existing workflow.
@@ -420,12 +469,14 @@ class LaunchPad(FWSerializable):
                         links_dict['metadata'], links_dict['created_on'],
                         links_dict['updated_on'], fw_states)
 
-    def delete_wf(self, fw_id):
+    def delete_wf(self, fw_id, delete_launch_dirs=False):
         """
         Delete the workflow containing firework with the given id.
 
         Args:
             fw_id (int): Firework id
+            delete_launch_dirs (bool): if True all the launch directories associated with
+                the WF will be deleted as well, if possible.
         """
         links_dict = self.workflows.find_one({'nodes': fw_id})
         fw_ids = links_dict["nodes"]
@@ -439,6 +490,14 @@ class LaunchPad(FWSerializable):
             if not self.fireworks.find_one({'$or': [{"launches": i}, {'archived_launches': i}],
                                             'fw_id': {"$nin": fw_ids}}, {'launch_id': 1}):
                 launch_ids.append(i)
+
+        if delete_launch_dirs:
+            launch_dirs = []
+            for i in launch_ids:
+                launch_dirs.append(self.launches.find_one({'launch_id': i}, {'launch_dir': 1})['launch_dir'])
+            print("Remove folders %s" % launch_dirs)
+            for d in launch_dirs:
+                shutil.rmtree(d, ignore_errors=True)
 
         print("Remove fws %s" % fw_ids)
         print("Remove launches %s" % launch_ids)
@@ -992,7 +1051,7 @@ class LaunchPad(FWSerializable):
         self.complete_launch(launch_id, state='FIZZLED')
 
     def detect_lostruns(self, expiration_secs=RUN_EXPIRATION_SECS, fizzle=False, rerun=False,
-                        max_runtime=None, min_runtime=None, refresh=False):
+                        max_runtime=None, min_runtime=None, refresh=False, query=None):
         """
         Detect lost runs i.e running fireworks that haven't been updated within the specified
         time limit or running firework whose launch has been marked fizzed or completed.
@@ -1004,6 +1063,7 @@ class LaunchPad(FWSerializable):
             max_runtime (seconds): maximum run time
             min_runtime (seconds): minimum run time
             refresh (bool): if True, refresh the workflow with inconsistent fireworks.
+            query (dict): restrict search to FWs matching this query
 
         Returns:
             ([int], [int], [int]): tuple of list of lost launch ids, lost firework ids and
@@ -1014,14 +1074,22 @@ class LaunchPad(FWSerializable):
         potential_lost_fw_ids = []
         now_time = datetime.datetime.utcnow()
         cutoff_timestr = (now_time - datetime.timedelta(seconds=expiration_secs)).isoformat()
-        bad_launch_data = self.launches.find({'state': 'RUNNING',
-                                              'state_history':
-                                                  {'$elemMatch':
-                                                      {'state': 'RUNNING',
-                                                       'updated_on': {'$lte': cutoff_timestr}
-                                                       }
-                                                  }
-                                              },
+
+        lostruns_query = {'state': 'RUNNING',
+                          'state_history':
+                              {'$elemMatch':
+                                   {'state': 'RUNNING',
+                                    'updated_on': {'$lte': cutoff_timestr}
+                                    }
+                               }
+                          }
+
+        if query:
+            fw_ids = [x["fw_id"] for x in self.fireworks.find(query,
+                                                              {"fw_id": 1})]
+            lostruns_query["fw_id"] = {"$in": fw_ids}
+
+        bad_launch_data = self.launches.find(lostruns_query,
                                              {'launch_id': 1, 'fw_id': 1})
         for ld in bad_launch_data:
             bad_launch = True
@@ -1062,7 +1130,10 @@ class LaunchPad(FWSerializable):
                         self.rerun_fw(fw_id)
 
         inconsistent_fw_ids = []
-        running_fws = self.fireworks.find({'state': 'RUNNING'}, {'fw_id': 1, 'launches': 1})
+        inconsistent_query = query or {}
+        inconsistent_query['state'] = 'RUNNING'
+        running_fws = self.fireworks.find(inconsistent_query,
+                                          {'fw_id': 1, 'launches': 1})
         for fw in running_fws:
             if self.launches.find_one({'launch_id': {'$in': fw['launches']},
                                        'state': {'$in': ['FIZZLED', 'COMPLETED']}}):
@@ -1319,7 +1390,7 @@ class LaunchPad(FWSerializable):
                                               "fw_id": {"$ne": fw_id}}, {"fw_id": 1}):
                     duplicates.append(d['fw_id'])
             duplicates = list(set(duplicates))
-        
+
         # Launch recovery
         if recover_launch is not None:
             recovery = self.get_recovery(fw_id, recover_launch)
@@ -1327,9 +1398,9 @@ class LaunchPad(FWSerializable):
             set_spec = {'$set': {'spec._recovery': recovery}}
             if recover_mode == 'prev_dir':
                 prev_dir = self.get_launch_by_id(recovery.get('_launch_id')).launch_dir
-                set_spec['$set']['spec._launch_dir'] = prev_dir 
+                set_spec['$set']['spec._launch_dir'] = prev_dir
             self.fireworks.find_one_and_update({"fw_id": fw_id}, set_spec)
-            
+
         # If no launch recovery specified, unset the firework recovery spec
         else:
             set_spec = {"$unset":{"spec._recovery":""}}
@@ -1355,7 +1426,7 @@ class LaunchPad(FWSerializable):
             r = self.rerun_fw(f, rerun_duplicates=False, recover_launch=recover_launch,
                               recover_mode=recover_mode)
             reruns.extend(r)
-        
+
         return reruns
 
     def get_recovery(self, fw_id, launch_id='last'):
@@ -1521,8 +1592,9 @@ class LaunchPad(FWSerializable):
                 self.ping_launch(launch_id, ptime=ping_dict['ping_time'])
 
             # look for action in FW_offline.json
-            offline_loc = os.path.join(m_launch.launch_dir, "FW_offline.json")
-            with open(offline_loc) as f:
+            offline_loc = zpath(os.path.join(m_launch.launch_dir,
+                                             "FW_offline.json"))
+            with zopen(offline_loc) as f:
                 offline_data = loadfn(offline_loc)
                 if 'started_on' in offline_data:
                     m_launch.state = 'RUNNING'
@@ -1540,7 +1612,7 @@ class LaunchPad(FWSerializable):
                                                             })
                     if f:
                         self._refresh_wf(fw_id)
-                
+
                 if 'checkpoint' in offline_data:
                     m_launch.touch_history(checkpoint=offline_data['checkpoint'])
                     self.launches.find_one_and_replace({'launch_id': m_launch.launch_id},
@@ -1603,6 +1675,17 @@ class LaunchPad(FWSerializable):
                 trackers = [Tracker.from_dict(t) for t in l['trackers']]
                 data.append({'launch_id': l['launch_id'], 'trackers': trackers})
         return data
+
+    def get_launchdir(self, fw_id, launch_idx=-1):
+        """
+        Returns the directory of the *most recent* launch of a fw_id
+        Args:
+            fw_id: (int) fw_id to get launch id for
+            launch_idx: (int) index of the launch to get. Default is -1, which is most recent.
+        """
+        fw = self.get_fw_by_id(fw_id)
+        return fw.launches[launch_idx].launch_dir \
+            if len(fw.launches) > 0 else None
 
     def log_message(self, level, message):
         """

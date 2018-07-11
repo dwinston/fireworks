@@ -42,6 +42,7 @@ Additional contributions from:
 * Jacob Boes
 * Matt Horton
 * Eric Sivonxay
+* Matt Henderson
 * Github user: kpoman
 * Github user: jakirkham
 * Github user: shenjh
@@ -52,6 +53,8 @@ Thanks for helpful discussions:
 * Marat Valiev
 * Stephen Bailey
 * Deborah Bard
+* Arun Gopalan
+* User: Primer
 
 .. _pymatgen: http://packages.python.org/pymatgen/
 .. _custodian: https://pypi.python.org/pypi/custodian

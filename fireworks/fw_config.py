@@ -10,11 +10,6 @@ import os
 from monty.serialization import loadfn, dumpfn
 from monty.design_patterns import singleton
 
-try:
-    from yaml import CSafeDumper as Dumper
-except ImportError:
-    from yaml import SafeDumper as Dumper
-
 __author__ = 'Anubhav Jain'
 __copyright__ = 'Copyright 2012, The Materials Project'
 __version__ = '0.1'
@@ -67,6 +62,8 @@ FWORKER_LOC = None  # where to find the my_fworker.yaml file
 QUEUEADAPTER_LOC = None  # where to find the my_qadapter.yaml file
 
 CONFIG_FILE_DIR = '.'  # directory containing config files (if not individually set)
+
+ROCKET_STREAM_LOGLEVEL = "INFO"  # the streaming log level of the rocket.launcher logger
 
 QSTAT_FREQUENCY = 50  # set this higher to avoid qstats, lower to alwas
 
@@ -172,7 +169,7 @@ def config_to_dict():
 
 def write_config(path=None):
     path = os.path.join(os.path.expanduser('~'), ".fireworks", 'FW_config.yaml') if path is None else path
-    dumpfn(config_to_dict(), path, Dumper=Dumper)
+    dumpfn(config_to_dict(), path)
 
 
 @singleton

@@ -2,6 +2,63 @@
 FireWorks Changelog
 ===================
 
+**v1.7.5**
+
+* minor bug fixes (G. Petretto)
+
+**v1.7.4**
+
+* multiple fw_ids in lpad are always comma-separated, fix for autodocs
+* offline mode more naturally supports gzipped FW_offline.json
+* add a "query" filter option for detect_lostruns
+* tutorial updates on updating Fireworks (S. Dwaraknath)
+
+**v1.7.3**
+
+* minor update to SLURM template (E. Sivonxay)
+* minor doc updates
+
+**v1.7.2**
+
+* fix FW_offline if job changes directory
+* fixed lpad cli when performing wflow operations (R. Gowers)
+* Add signal to SLURM queue adapter (S. Dwaraknath)
+
+**v1.7.1**
+
+* update FWS rapidfire launch logic (thanks to Primer for suggestions)
+* upgrade CircleCI testing (A. Dunn)
+
+**v1.6.9**
+
+* important bugfix: bulk insert workflow inserted negative FW_ids (G. Petretto)
+* option to delete launch dirs when deleting workflow (G. Petretto)
+* modify FireTask to be compatible with pickle/unpickle (M. Henderson)
+* switch to ruamel.yaml to use more up to date YAML standard
+
+**v1.6.8**
+
+.. warning:: a bug in bulk insert workflow function resulting in negative FW_ids was fixed in v1.6.9
+
+* add ``launch_idx`` option to ``lpad get_launchdir`` command (as requested by S. Dwaraknath)
+
+**v1.6.7**
+
+.. warning:: a bug in bulk insert workflow function resulting in negative FW_ids was fixed in v1.6.9
+
+* lpad bulk insert workflow function - if you have 10 or more workflows to enter, do it 10X faster using this function (J. Montoya)
+* add ``lpad get_launchdir <FW_ID>`` function. e.g., can now do "cd `get_launchdir <FW_ID>` to change to the most recent launch dir of a FW.
+
+**v1.6.6**
+
+* Improve qlaunch rapidfire (with guidance from A. Gopalan)
+
+**v1.6.5**
+
+* sketch of MOAB queue adapter (with guidance from A. Gopalan)
+* add option to ``lpad webgui`` for number of server processes (D. Winston)
+* more sanity checks to workflow (I. Kondov)
+
 **v1.6.4**
 
 * new workflow check option that validates and plots a workflow using python-igraph (I. Kondov)
